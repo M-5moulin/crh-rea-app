@@ -63,9 +63,6 @@ RÈGLES DE MISE EN FORME :
 
 # TRAITEMENT DE SORTIE
 
-Traitement habituel :  Poursuite ☐      Modification ☒      Suppression ☐      Aucun ☐
-Ordonnances de sortie pour retour à domicile jointes à ce courrier :  Oui ☐    Non ☐
-
 Instructions pour les médicaments :
 - Trie les médicaments fournis dans "DONNÉES TRAITEMENTS" par voie d'administration.
 - Utilise un point "•" pour chaque médicament.
