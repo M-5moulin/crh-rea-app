@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   FileText, 
   RefreshCw, 
@@ -14,9 +14,10 @@ import {
   FileDown
 } from 'lucide-react';
 
-const apiKey = ""; // La clé est fournie par l'environnement d'exécution
+// NOTE POUR VERCEL : Si vous utilisez les variables d'environnement, la clé sera injectée.
+// Sinon, vous pouvez coller votre clé temporairement entre les guillemets ci-dessous pour tester.
+const apiKey = ""; 
 
-// Prompt mis à jour : Espacement des paragraphes et Puces rondes pour les médicaments
 const REANIMATION_PROMPT = `
 Tu es un médecin interne en réanimation. Ta tâche est de rédiger un Compte Rendu de Sortie d'Hospitalisation (CRH) formel.
 
@@ -62,6 +63,9 @@ RÈGLES DE MISE EN FORME :
 (Résumé concis : Patient de X ans, motif d'admission, antécédents majeurs, résumé de l'évolution globale et destination de sortie).
 
 # TRAITEMENT DE SORTIE
+
+Traitement habituel :  Poursuite ☐      Modification ☒      Suppression ☐      Aucun ☐
+Ordonnances de sortie pour retour à domicile jointes à ce courrier :  Oui ☐    Non ☐
 
 Instructions pour les médicaments :
 - Trie les médicaments fournis dans "DONNÉES TRAITEMENTS" par voie d'administration.
@@ -129,8 +133,22 @@ export default function App() {
   const audioRef = useRef(null);
 
   const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.5-flash-preview-09-2025") => {
-    // Utilisation de la clé API globale
-    const keyToUse = apiKey || ""; 
+    // Si la clé est vide ici, on essaie de la récupérer via Vite/Vercel ENV de manière sécurisée
+    // Si ça échoue (local sans env), ça restera vide.
+    let keyToUse = apiKey;
+    try {
+        if (!keyToUse && import.meta.env.VITE_GEMINI_API_KEY) {
+            keyToUse = import.meta.env.VITE_GEMINI_API_KEY;
+        }
+    } catch (e) {
+        // Ignorer l'erreur si import.meta n'existe pas
+    }
+    
+    if (!keyToUse) {
+        // Fallback pour la démo seulement
+        keyToUse = ""; 
+    }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
@@ -176,7 +194,7 @@ export default function App() {
       const data = await fetchGemini(combinedPrompt, reportType.systemPrompt);
       setGeneratedReport(data.candidates?.[0]?.content?.parts?.[0]?.text || '');
     } catch (err) {
-      setError("Erreur de génération. Vérifiez votre connexion et votre clé API.");
+      setError("Erreur : Vérifiez votre clé API.");
     } finally {
       setIsLoading(false);
     }
@@ -196,7 +214,7 @@ export default function App() {
         prompt = `Traduis ce CRH médical en Anglais pour un transfert international : \n\n${generatedReport}`;
         break;
       case 'check':
-        prompt = `Relis ce CRH et vérifie s'il y a des incohérences évidentes (ex: patient intubé qui mange, ou doses aberrantes) ou des éléments manquants importants pour une sortie de réa. Liste-les brièvement : \n\n${generatedReport}`;
+        prompt = `Relis ce CRH et vérifie s'il y a des incohérences évidentes. Liste-les brièvement : \n\n${generatedReport}`;
         break;
       default: break;
     }
@@ -216,72 +234,38 @@ export default function App() {
     }
   };
 
-  // Traitement du texte pour le rendu HTML (Word et Web)
-  // Cette fonction découpe le texte en paragraphes pour appliquer le style justifié et l'indentation
   const processTextToHtml = (text) => {
     if (!text) return '';
     return text.split('\n').map((line, index) => {
-      // 1. Titres H1 (#)
       if (line.startsWith('# ')) {
         return `<h1 style="font-size: 11pt; font-weight: bold; text-transform: uppercase; text-decoration: underline; margin-top: 24px; margin-bottom: 12px; color: #000000; text-align: left;">${line.replace('# ', '')}</h1>`;
       }
-      // 2. Titres H2 (##)
       if (line.startsWith('## ')) {
         return `<h2 style="font-size: 11pt; font-weight: bold; margin-top: 18px; color: #000000; text-align: left;">${line.replace('## ', '')}</h2>`;
       }
-      
-      // 3. Lignes vides
       if (line.trim() === '') {
         return '<p style="margin: 0; height: 12pt;">&nbsp;</p>';
       }
-
-      // 4. Traitement du contenu des lignes
       let content = line;
-
-      // Gestion Gras+Souligné (<u>**...**</u>) pour les voies d'administration
       content = content.replace(/<u>\*\*(.*?)\*\*<\/u>/g, '<span style="text-decoration: underline; font-weight: bold;">$1</span>');
-      // Gestion Souligné simple (<u>...</u>) pour l'évolution
       content = content.replace(/<u>(.*?)<\/u>/g, '<span style="text-decoration: underline;">$1</span>');
-      // Gestion Gras simple (**)
       content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      // Gestion Italique (*)
       content = content.replace(/\*(.*?)\*/g, '<em>$1</em>');
-
-      // 5. Médicaments (Lignes commençant par •) -> Indentation
       if (line.trim().startsWith('•')) {
-        // Retirer le point original pour le gérer proprement ou le garder avec indentation
-        // Ici on le garde mais on indente le paragraphe entier
         return `<p style="margin-bottom: 6pt; margin-top: 0; text-align: justify; margin-left: 1cm; text-indent: -0.5cm;">${content}</p>`;
       }
-
-      // 6. Paragraphes standard (Evolution, Synthèse...) -> Justifié
       return `<p style="margin-bottom: 6pt; margin-top: 0; text-align: justify;">${content}</p>`;
     }).join('');
   };
 
   const downloadAsWord = () => {
     if (!generatedReport) return;
-
     const htmlContent = processTextToHtml(generatedReport);
-      
     const fileContent = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head>
-        <meta charset="utf-8">
-        <title>Compte Rendu Hospitalisation</title>
-        <style>
-          @page { size: A4; margin: 2.5cm; }
-          body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 11pt; line-height: 1.15; color: #000000; }
-          /* Styles inline sont préférés pour l'export Word, mais on garde des defaults ici */
-          p { margin-bottom: 6pt; text-align: justify; }
-        </style>
-      </head>
-      <body>
-        ${htmlContent}
-      </body>
-      </html>
-    `;
-
+      <head><meta charset="utf-8"><title>CRH</title>
+      <style>@page { size: A4; margin: 2.5cm; } body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 11pt; line-height: 1.15; color: #000000; }</style>
+      </head><body>${htmlContent}</body></html>`;
     const blob = new Blob(['\ufeff', fileContent], { type: 'application/msword' });
     const href = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -307,164 +291,71 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto">
         <audio ref={audioRef} hidden />
-        
-        {/* Header */}
         <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-emerald-800 flex items-center gap-2">
               <Activity className="w-8 h-8 text-emerald-600" />
               CRHréa AI
             </h1>
-            <p className="text-slate-500 mt-1">Générateur de CRH de réanimation : copier-coller les notes ICCA en vrac, pensez a bien anonymiser les données notamment les nom propres</p>
+            <p className="text-slate-500 mt-1">Générateur de CRH : copier-coller les notes ICCA. Anonymisez les données.</p>
           </div>
           <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
             {REPORT_TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.id}
-                onClick={() => setReportType(tpl)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex items-center gap-2 ${
-                  reportType.id === tpl.id 
-                  ? 'bg-emerald-600 text-white shadow-md' 
-                  : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {tpl.icon}
-                {tpl.name}
+              <button key={tpl.id} onClick={() => setReportType(tpl)} className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex items-center gap-2 ${reportType.id === tpl.id ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
+                {tpl.icon} {tpl.name}
               </button>
             ))}
           </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          {/* Input Section */}
           <div className="flex flex-col gap-4">
-            
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[380px]">
               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
-                <span className="font-semibold text-slate-700 flex items-center gap-2">
-                  <Stethoscope className="w-4 h-4 text-emerald-500" /> Données Cliniques (Évolution)
-                </span>
-                <span className="text-xs text-slate-400">Notes ICCA en vrac</span>
+                <span className="font-semibold text-slate-700 flex items-center gap-2"><Stethoscope className="w-4 h-4 text-emerald-500" /> Clinique (Évolution)</span>
               </div>
-              <textarea
-                className="flex-1 p-4 outline-none resize-none bg-transparent font-mono text-sm leading-relaxed"
-                placeholder="Ex: J1: intubation... J3: sevrage... Echo: FEVG 30%..."
-                value={rawData}
-                onChange={(e) => setRawData(e.target.value)}
-              />
+              <textarea className="flex-1 p-4 outline-none resize-none bg-transparent font-mono text-sm leading-relaxed" placeholder="Notes ICCA en vrac..." value={rawData} onChange={(e) => setRawData(e.target.value)} />
             </div>
-
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[200px]">
               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
-                <span className="font-semibold text-slate-700 flex items-center gap-2">
-                  <Pill className="w-4 h-4 text-indigo-500" /> Traitements (pour la sortie)
-                </span>
-                <span className="text-xs text-slate-400">Liste médicaments bruts</span>
+                <span className="font-semibold text-slate-700 flex items-center gap-2"><Pill className="w-4 h-4 text-indigo-500" /> Traitements</span>
               </div>
-              <textarea
-                className="flex-1 p-4 outline-none resize-none bg-transparent font-mono text-sm leading-relaxed"
-                placeholder="Ex: Paracetamol 1g x4, Lovenox 0.4..."
-                value={treatmentsData}
-                onChange={(e) => setTreatmentsData(e.target.value)}
-              />
+              <textarea className="flex-1 p-4 outline-none resize-none bg-transparent font-mono text-sm leading-relaxed" placeholder="Médicaments bruts..." value={treatmentsData} onChange={(e) => setTreatmentsData(e.target.value)} />
             </div>
-
-            <button
-              onClick={generateReport}
-              disabled={isLoading || (!rawData.trim() && !treatmentsData.trim())}
-              className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 disabled:opacity-50 shadow-lg shadow-emerald-200 transition-all mt-2"
-            >
-              {isLoading ? <RefreshCw className="animate-spin w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
-              Générer le CRH Structuré
+            <button onClick={generateReport} disabled={isLoading || (!rawData.trim() && !treatmentsData.trim())} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 disabled:opacity-50 shadow-lg shadow-emerald-200 transition-all mt-2">
+              {isLoading ? <RefreshCw className="animate-spin w-5 h-5" /> : <Sparkles className="w-5 h-5" />} Générer le CRH
             </button>
           </div>
 
-          {/* Output Section */}
           <div className="flex flex-col gap-4">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[700px]">
               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
-                <span className="font-semibold text-slate-700 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-emerald-600" /> Résultat (Format Word)
-                </span>
+                <span className="font-semibold text-slate-700 flex items-center gap-2"><FileText className="w-4 h-4 text-emerald-600" /> Résultat</span>
                 <div className="flex gap-2">
-                  {generatedReport && (
-                    <button 
-                      onClick={downloadAsWord}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors border border-blue-100"
-                      title="Télécharger pour Word"
-                    >
-                      <FileDown className="w-4 h-4" /> Word
-                    </button>
-                  )}
-                  <button onClick={copyToClipboard} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Copier le texte">
-                    {copySuccess ? <CheckCircle2 className="text-emerald-500 w-5 h-5" /> : <Copy className="w-5 h-5" />}
-                  </button>
+                  {generatedReport && <button onClick={downloadAsWord} className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors border border-blue-100"><FileDown className="w-4 h-4" /> Word</button>}
+                  <button onClick={copyToClipboard} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">{copySuccess ? <CheckCircle2 className="text-emerald-500 w-5 h-5" /> : <Copy className="w-5 h-5" />}</button>
                 </div>
               </div>
-
-              {/* Aperçu web du document */}
-              <div 
-                className="flex-1 p-8 overflow-y-auto bg-white font-sans text-sm leading-6 ml-4 my-4 pl-6 shadow-inner bg-[url('https://www.transparenttextures.com/patterns/paper.png')]"
-              >
+              <div className="flex-1 p-8 overflow-y-auto bg-white font-sans text-sm leading-6 ml-4 my-4 pl-6 shadow-inner bg-[url('https://www.transparenttextures.com/patterns/paper.png')]">
                 {isLoading ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
-                    <Activity className="w-12 h-12 animate-pulse text-emerald-500" />
-                    <div className="flex flex-col items-center">
-                      <p className="font-medium text-slate-600">Rédaction en cours...</p>
-                      <p className="text-xs">Mise en forme "Calibri 11pt"...</p>
-                    </div>
-                  </div>
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4"><Activity className="w-12 h-12 animate-pulse text-emerald-500" /><p className="font-medium text-slate-600">Rédaction en cours...</p></div>
                 ) : generatedReport ? (
                   <div dangerouslySetInnerHTML={{ __html: processTextToHtml(generatedReport) }} />
                 ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-300 italic gap-2">
-                    <Layout className="w-12 h-12 opacity-20" />
-                    <p>Le document final s'affichera ici.</p>
-                  </div>
+                  <div className="h-full flex flex-col items-center justify-center text-slate-300 italic gap-2"><Layout className="w-12 h-12 opacity-20" /><p>Le document final s'affichera ici.</p></div>
                 )}
               </div>
-
               {generatedReport && (
                 <div className="p-3 bg-slate-50 border-t flex flex-wrap gap-2 rounded-b-2xl">
-                  <button 
-                    disabled={isProcessing}
-                    onClick={() => handleAiAction('polish')}
-                    className="flex-1 min-w-[120px] py-2 px-3 bg-white text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-50 flex items-center justify-center gap-1 border border-emerald-100 shadow-sm"
-                  >
-                    <Sparkles className="w-3 h-3" /> Reformuler
-                  </button>
-                  <button 
-                    disabled={isProcessing}
-                    onClick={() => handleAiAction('check')}
-                    className="flex-1 min-w-[120px] py-2 px-3 bg-white text-amber-700 rounded-lg text-xs font-bold hover:bg-amber-50 flex items-center justify-center gap-1 border border-amber-100 shadow-sm"
-                  >
-                    <AlertCircle className="w-3 h-3" /> Vérifier Cohérence
-                  </button>
-                  <button 
-                    disabled={isProcessing}
-                    onClick={() => handleAiAction('translate')}
-                    className="flex-1 min-w-[120px] py-2 px-3 bg-white text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 flex items-center justify-center gap-1 border border-slate-200 shadow-sm"
-                  >
-                    <Languages className="w-3 h-3" /> Traduire (EN)
-                  </button>
+                  <button disabled={isProcessing} onClick={() => handleAiAction('polish')} className="flex-1 py-2 px-3 bg-white text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-50 border border-emerald-100"><Sparkles className="w-3 h-3 inline mr-1" /> Reformuler</button>
+                  <button disabled={isProcessing} onClick={() => handleAiAction('check')} className="flex-1 py-2 px-3 bg-white text-amber-700 rounded-lg text-xs font-bold hover:bg-amber-50 border border-amber-100"><AlertCircle className="w-3 h-3 inline mr-1" /> Vérifier</button>
+                  <button disabled={isProcessing} onClick={() => handleAiAction('translate')} className="flex-1 py-2 px-3 bg-white text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 border border-slate-200"><Languages className="w-3 h-3 inline mr-1" /> Anglais</button>
                 </div>
               )}
             </div>
           </div>
         </div>
-        
-        <div className="mt-6 p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-xs text-emerald-800 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <p>
-                <strong>Note de sécurité :</strong> En cliquant sur "Word", un fichier .doc est généré localement dans votre navigateur.
-                <br/>Le document suit le formalisme : Titres soulignés en majuscules, police Calibri 11pt, sous-titres soulignés sans puces.
-            </p>
-        </div>
-
-        <footer className="mt-8 text-center text-slate-400 text-xs">
-          CRHréa AI • Optimisé pour la Réanimation • Gemini 2.5 Flash
-        </footer>
+        <footer className="mt-8 text-center text-slate-400 text-xs">CRHréa AI • Gemini 2.5 Flash</footer>
       </div>
     </div>
   );
