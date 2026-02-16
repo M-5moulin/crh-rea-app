@@ -7,9 +7,19 @@
     <!-- Chargement de Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
-  <body>
-    <div id="root"></div>
+  <body class="bg-slate-50">
+    <!-- Ce message s'affiche pendant que l'application charge -->
+    <div id="root" class="flex items-center justify-center min-h-screen text-slate-400">
+      <div class="text-center">
+        <!-- Animation de chargement -->
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+        <p class="text-lg font-semibold text-emerald-800">Chargement de CRHréa AI...</p>
+        <p class="text-xs mt-2 text-slate-500">Initialisation en cours</p>
+      </div>
+    </div>
+    
     <!-- C'est ici que l'on connecte votre code React -->
-    <script type="module" src="/App.jsx"></script>
+    <!-- Le point '.' au début est important pour que Vercel trouve le fichier -->
+    <script type="module" src="./App.jsx"></script>
   </body>
 </html>
