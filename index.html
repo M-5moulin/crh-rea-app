@@ -8,18 +8,27 @@
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="bg-slate-50">
-    <!-- Ce message s'affiche pendant que l'application charge -->
+    <!-- Zone d'affichage de l'application -->
     <div id="root" class="flex items-center justify-center min-h-screen text-slate-400">
       <div class="text-center">
-        <!-- Animation de chargement -->
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
         <p class="text-lg font-semibold text-emerald-800">Chargement de CRHréa AI...</p>
         <p class="text-xs mt-2 text-slate-500">Initialisation en cours</p>
       </div>
     </div>
     
-    <!-- C'est ici que l'on connecte votre code React -->
-    <!-- Le point '.' au début est important pour que Vercel trouve le fichier -->
-    <script type="module" src="./App.jsx"></script>
+    <!-- SCRIPT DE DÉMARRAGE (Correction Page Blanche) -->
+    <script type="module">
+      // 1. On importe les outils React
+      import React from 'react';
+      import ReactDOM from 'react-dom/client';
+      // 2. On importe votre application
+      import App from './App.jsx';
+
+      // 3. On démarre l'application dans la zone "root"
+      // Note: On utilise createElement car on est dans un fichier HTML standard
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(React.createElement(React.StrictMode, null, React.createElement(App)));
+    </script>
   </body>
 </html>
