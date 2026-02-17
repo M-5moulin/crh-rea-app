@@ -14,8 +14,7 @@ import {
   FileDown
 } from 'lucide-react';
 
-// NOTE POUR VERCEL : Si vous utilisez les variables d'environnement, la clé sera injectée.
-// Sinon, vous pouvez coller votre clé temporairement entre les guillemets ci-dessous pour tester.
+// Clé API vide par défaut (sera remplie par Vercel Environment Variables)
 const apiKey = ""; 
 
 const REANIMATION_PROMPT = `
@@ -64,31 +63,29 @@ RÈGLES DE MISE EN FORME :
 
 # TRAITEMENT DE SORTIE
 
-Traitement habituel :  Poursuite ☐      Modification ☒      Suppression ☐      Aucun ☐
-Ordonnances de sortie pour retour à domicile jointes à ce courrier :  Oui ☐    Non ☐
-
 Instructions pour les médicaments :
 - Trie les médicaments fournis dans "DONNÉES TRAITEMENTS" par voie d'administration.
-- Utilise un point "•" pour chaque médicament.
-- Format : • NOM_DU_MEDICAMENT Dosage (Posologie/Fréquence)
+- N'utilise PAS de puces ni de points.
+- Écris le NOM DU MÉDICAMENT en MAJUSCULES.
+- Format : NOM_DU_MEDICAMENT Dosage (Posologie/Fréquence)
 - Exemple : 
-  • PARACÉTAMOL 1g (/6h si besoin)
+  PARACÉTAMOL 1g (/6h si besoin)
 - Si aucune donnée pour une voie, ne rien mettre dessous.
 
 <u>**Par voie intraveineuse :**</u>
-(Lister ici avec des points "•")
+(Lister ici sans puces)
 
 <u>**Par voie sous-cutanée :**</u>
-(Lister ici avec des points "•")
+(Lister ici sans puces)
 
 <u>**Par voie orale :**</u>
-(Lister ici avec des points "•")
+(Lister ici sans puces)
 
 <u>**Par voie ophtalmique :**</u>
-(Lister ici avec des points "•")
+(Lister ici sans puces)
 
 <u>**Par voie transdermique :**</u>
-(Lister ici avec des points "•")
+(Lister ici sans puces)
 
 <u>**Autres :**</u>
 (Aérosols, etc.)
@@ -133,21 +130,17 @@ export default function App() {
   const audioRef = useRef(null);
 
   const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.5-flash-preview-09-2025") => {
-    // Si la clé est vide ici, on essaie de la récupérer via Vite/Vercel ENV de manière sécurisée
-    // Si ça échoue (local sans env), ça restera vide.
+    // Récupération sécurisée de la clé pour Vercel
     let keyToUse = apiKey;
     try {
         if (!keyToUse && import.meta.env.VITE_GEMINI_API_KEY) {
             keyToUse = import.meta.env.VITE_GEMINI_API_KEY;
         }
-    } catch (e) {
-        // Ignorer l'erreur si import.meta n'existe pas
+    } catch (e) { 
+        // Mode local sans env ou erreur d'accès
     }
     
-    if (!keyToUse) {
-        // Fallback pour la démo seulement
-        keyToUse = ""; 
-    }
+    if (!keyToUse) keyToUse = ""; 
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
     const payload = {
@@ -183,14 +176,11 @@ export default function App() {
     try {
       const combinedPrompt = `
       Voici les données pour le compte rendu :
-
       --- DONNÉES CLINIQUES / ÉVOLUTION ---
       ${rawData}
-
       --- DONNÉES TRAITEMENTS (à formater selon instructions) ---
       ${treatmentsData}
       `;
-
       const data = await fetchGemini(combinedPrompt, reportType.systemPrompt);
       setGeneratedReport(data.candidates?.[0]?.content?.parts?.[0]?.text || '');
     } catch (err) {
@@ -234,26 +224,34 @@ export default function App() {
     }
   };
 
+  // Convertisseur Texte vers HTML pour l'affichage Web et Word
   const processTextToHtml = (text) => {
     if (!text) return '';
     return text.split('\n').map((line, index) => {
+      // Titres H1
       if (line.startsWith('# ')) {
         return `<h1 style="font-size: 11pt; font-weight: bold; text-transform: uppercase; text-decoration: underline; margin-top: 24px; margin-bottom: 12px; color: #000000; text-align: left;">${line.replace('# ', '')}</h1>`;
       }
+      // Titres H2
       if (line.startsWith('## ')) {
         return `<h2 style="font-size: 11pt; font-weight: bold; margin-top: 18px; color: #000000; text-align: left;">${line.replace('## ', '')}</h2>`;
       }
+      // Lignes vides
       if (line.trim() === '') {
         return '<p style="margin: 0; height: 12pt;">&nbsp;</p>';
       }
+      
       let content = line;
+      // Formatage Gras+Souligné (Voies d'administration)
       content = content.replace(/<u>\*\*(.*?)\*\*<\/u>/g, '<span style="text-decoration: underline; font-weight: bold;">$1</span>');
+      // Formatage Souligné simple (Titres évolution)
       content = content.replace(/<u>(.*?)<\/u>/g, '<span style="text-decoration: underline;">$1</span>');
+      // Formatage Gras
       content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      // Formatage Italique
       content = content.replace(/\*(.*?)\*/g, '<em>$1</em>');
-      if (line.trim().startsWith('•')) {
-        return `<p style="margin-bottom: 6pt; margin-top: 0; text-align: justify; margin-left: 1cm; text-indent: -0.5cm;">${content}</p>`;
-      }
+      
+      // Paragraphes normaux (Justifiés)
       return `<p style="margin-bottom: 6pt; margin-top: 0; text-align: justify;">${content}</p>`;
     }).join('');
   };
