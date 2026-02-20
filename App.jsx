@@ -140,7 +140,9 @@ export default function App() {
         // Mode local sans env ou erreur d'accès
     }
     
-    if (!keyToUse) keyToUse = ""; 
+    if (!keyToUse) {
+      throw new Error("Clé API manquante. Veuillez vérifier la configuration Vercel (VITE_GEMINI_API_KEY).");
+    }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
     const payload = {
@@ -155,11 +157,16 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        if (!response.ok) throw new Error('API Error');
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error?.message || `Erreur API Google (${response.status})`);
+        }
+        
         const data = await response.json();
         return data;
       } catch (err) {
-        if (retries < 5) {
+        if (retries < 5 && !err.message.includes("Clé API manquante")) {
           await new Promise(r => setTimeout(r, Math.pow(2, retries) * 1000));
           return execute(retries + 1);
         }
@@ -184,7 +191,8 @@ export default function App() {
       const data = await fetchGemini(combinedPrompt, reportType.systemPrompt);
       setGeneratedReport(data.candidates?.[0]?.content?.parts?.[0]?.text || '');
     } catch (err) {
-      setError("Erreur : Vérifiez votre clé API.");
+      console.error(err);
+      setError(`Génération échouée : ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -193,6 +201,7 @@ export default function App() {
   const handleAiAction = async (actionType) => {
     if (!generatedReport) return;
     setIsProcessing(true);
+    setError(null);
     let prompt = "";
     let system = "Tu es un assistant médical expert.";
 
@@ -218,7 +227,8 @@ export default function App() {
         setGeneratedReport(result);
       }
     } catch (err) {
-      setError("L'action a échoué.");
+      console.error(err);
+      setError(`L'action a échoué : ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -314,12 +324,22 @@ export default function App() {
               </div>
               <textarea className="flex-1 p-4 outline-none resize-none bg-transparent font-mono text-sm leading-relaxed" placeholder="Notes ICCA en vrac..." value={rawData} onChange={(e) => setRawData(e.target.value)} />
             </div>
+            
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[200px]">
               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
                 <span className="font-semibold text-slate-700 flex items-center gap-2"><Pill className="w-4 h-4 text-indigo-500" /> Traitements</span>
               </div>
               <textarea className="flex-1 p-4 outline-none resize-none bg-transparent font-mono text-sm leading-relaxed" placeholder="Médicaments bruts..." value={treatmentsData} onChange={(e) => setTreatmentsData(e.target.value)} />
             </div>
+
+            {/* Affichage des Erreurs Bloquantes */}
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-start gap-3 mt-2 shadow-sm">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <p className="text-sm font-medium leading-relaxed">{error}</p>
+              </div>
+            )}
+
             <button onClick={generateReport} disabled={isLoading || (!rawData.trim() && !treatmentsData.trim())} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 disabled:opacity-50 shadow-lg shadow-emerald-200 transition-all mt-2">
               {isLoading ? <RefreshCw className="animate-spin w-5 h-5" /> : <Sparkles className="w-5 h-5" />} Générer le CRH
             </button>
