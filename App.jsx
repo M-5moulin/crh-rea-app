@@ -129,7 +129,7 @@ export default function App() {
   
   const audioRef = useRef(null);
 
-  const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.5-flash-preview-09-2025") => {
+  const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.0-flash") => {
     let keyToUse = apiKey;
     try {
         if (!keyToUse && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
@@ -393,7 +393,7 @@ export default function App() {
             </div>
           </div>
         </div>
-        <footer className="mt-8 text-center text-slate-400 text-xs">CRHréa AI • Gemini 2.5 Flash</footer>
+        <footer className="mt-8 text-center text-slate-400 text-xs">CRHréa AI • Gemini 2.0 Flash</footer>
       </div>
     </div>
   );
