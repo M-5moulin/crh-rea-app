@@ -130,18 +130,19 @@ export default function App() {
   const audioRef = useRef(null);
 
   const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.5-flash-preview-09-2025") => {
-    // Récupération sécurisée de la clé pour Vercel
     let keyToUse = apiKey;
     try {
-        if (!keyToUse && import.meta.env.VITE_GEMINI_API_KEY) {
+        if (!keyToUse && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
             keyToUse = import.meta.env.VITE_GEMINI_API_KEY;
         }
     } catch (e) { 
-        // Mode local sans env ou erreur d'accès
+        // Mode local
     }
     
     if (!keyToUse) {
-      throw new Error("Clé API manquante. Veuillez vérifier la configuration Vercel (VITE_GEMINI_API_KEY).");
+      const err = new Error("Clé API manquante. Ajoutez VITE_GEMINI_API_KEY dans Vercel.");
+      err.dontRetry = true;
+      throw err;
     }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
@@ -160,13 +161,32 @@ export default function App() {
         
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error?.message || `Erreur API Google (${response.status})`);
+          const errorMessage = errorData.error?.message || `Erreur Serveur (${response.status})`;
+          
+          const err = new Error(errorMessage);
+          // Si c'est une erreur 400 ou 403 (clé invalide), on ne réessaie pas pour rien
+          if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+              err.dontRetry = true;
+          }
+          throw err;
         }
         
         const data = await response.json();
+        
+        // Vérification de sécurité (si l'IA bloque un texte médical)
+        if (!data.candidates || data.candidates.length === 0) {
+            const blockReason = data.promptFeedback?.blockReason;
+            const err = new Error(blockReason ? `Requête bloquée par l'IA (Raison: ${blockReason})` : "Aucun texte généré par l'IA.");
+            err.dontRetry = true;
+            throw err;
+        }
+        
         return data;
       } catch (err) {
-        if (retries < 5 && !err.message.includes("Clé API manquante")) {
+        // Arrêt immédiat si c'est une erreur critique (Clé fausse, bloqué...)
+        if (err.dontRetry) throw err;
+        
+        if (retries < 3) { // Réduit à 3 essais max
           await new Promise(r => setTimeout(r, Math.pow(2, retries) * 1000));
           return execute(retries + 1);
         }
@@ -179,7 +199,7 @@ export default function App() {
   const generateReport = async () => {
     if (!rawData.trim() && !treatmentsData.trim()) return;
     setIsLoading(true);
-    setError(null);
+    setError(null); // On efface les erreurs précédentes
     try {
       const combinedPrompt = `
       Voici les données pour le compte rendu :
@@ -189,10 +209,10 @@ export default function App() {
       ${treatmentsData}
       `;
       const data = await fetchGemini(combinedPrompt, reportType.systemPrompt);
-      setGeneratedReport(data.candidates?.[0]?.content?.parts?.[0]?.text || '');
+      setGeneratedReport(data.candidates[0].content.parts[0].text);
     } catch (err) {
       console.error(err);
-      setError(`Génération échouée : ${err.message}`);
+      setError(err.message); // Affichage de l'erreur
     } finally {
       setIsLoading(false);
     }
@@ -220,7 +240,7 @@ export default function App() {
 
     try {
       const data = await fetchGemini(prompt, system);
-      const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      const result = data.candidates[0].content.parts[0].text;
       if (actionType === 'check') {
         setGeneratedReport(prev => `${prev}\n\n---\n### ⚠️ Vérification IA (Suggestions)\n${result}`);
       } else {
