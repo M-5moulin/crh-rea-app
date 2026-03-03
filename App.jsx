@@ -11,10 +11,11 @@ import {
   Sparkles,
   Languages,
   Copy,
-  FileDown
+  FileDown,
+  Key
 } from 'lucide-react';
 
-// Clé API vide par défaut (sera remplie par Vercel Environment Variables)
+// Clé API vide par défaut (sera remplie par Vercel Environment Variables ou le champ manuel)
 const apiKey = ""; 
 
 const REANIMATION_PROMPT = `
@@ -127,16 +128,29 @@ export default function App() {
   const [error, setError] = useState(null);
   const [copySuccess, setCopySuccess] = useState(false);
   
+  // Nouveau state pour forcer la clé API manuellement si Vercel échoue
+  const [customApiKey, setCustomApiKey] = useState('');
+  
   const audioRef = useRef(null);
 
-  const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.5-flash-preview-09-2025") => {
-    let keyToUse = apiKey;
+  const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.0-flash") => {
+    // 1. Priorité à la clé saisie manuellement par l'utilisateur
+    // 2. Ensuite la clé codée en dur (apiKey)
+    // 3. Enfin la variable d'environnement Vercel
+    let keyToUse = customApiKey.trim() || apiKey;
+    
     try {
         if (!keyToUse && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
             keyToUse = import.meta.env.VITE_GEMINI_API_KEY;
         }
     } catch (e) { 
         // Mode local
+    }
+    
+    if (!keyToUse) {
+      const err = new Error("Clé API introuvable. Vercel ne trouve pas votre variable d'environnement. Veuillez coller votre clé dans le champ prévu à cet effet en haut de la page.");
+      err.dontRetry = true;
+      throw err;
     }
     
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
@@ -159,35 +173,32 @@ export default function App() {
           
           let err = new Error(errorMessage);
           
-          // Traitement spécifique des erreurs connues pour guider l'utilisateur
-          if (errorMessage.includes("API key expired") || errorMessage.includes("API key not valid")) {
-            err = new Error("La clé API est invalide ou expirée. Si vous l'avez mise à jour sur Vercel, vous DEVEZ redéployer le site en DÉCOCHANT l'option 'Use existing build cache'.");
-            err.dontRetry = true;
-          } else if (errorMessage.includes("limit: 0") || errorMessage.includes("Quota exceeded") || errorMessage.includes("not found")) {
-            err = new Error("Quota bloqué. En Europe, l'API Google nécessite d'activer la facturation (Pay-as-you-go) sur Google AI Studio, même pour l'utilisation basique.");
-            err.dontRetry = true;
+          if (errorMessage.includes("API key not valid") || errorMessage.includes("API key expired")) {
+             err = new Error("La clé API utilisée est invalide. Vérifiez que vous avez bien copié la clé entière depuis Google AI Studio.");
+             err.dontRetry = true;
+          } else if (errorMessage.includes("limit: 0") || errorMessage.includes("Quota exceeded")) {
+             err = new Error("Quota épuisé ou bloqué. Avez-vous bien activé la facturation (Pay-as-you-go) sur Google AI Studio comme expliqué précédemment ?");
+             err.dontRetry = true;
           } else if (response.status >= 400 && response.status < 500 && response.status !== 429) {
-            err.dontRetry = true;
+             err.dontRetry = true;
           }
           throw err;
         }
         
         const data = await response.json();
         
-        // Vérification de sécurité (si l'IA bloque un texte médical)
         if (!data.candidates || data.candidates.length === 0) {
             const blockReason = data.promptFeedback?.blockReason;
-            const err = new Error(blockReason ? `Requête bloquée par l'IA (Raison: ${blockReason})` : "Aucun texte généré par l'IA.");
+            const err = new Error(blockReason ? `Requête bloquée par sécurité IA (Raison: ${blockReason})` : "Aucun texte généré par l'IA.");
             err.dontRetry = true;
             throw err;
         }
         
         return data;
       } catch (err) {
-        // Arrêt immédiat si c'est une erreur critique (Clé fausse, bloqué...)
         if (err.dontRetry) throw err;
         
-        if (retries < 3) { // Réduit à 3 essais max
+        if (retries < 2) { // 2 essais max pour éviter les chargements infinis
           await new Promise(r => setTimeout(r, Math.pow(2, retries) * 1000));
           return execute(retries + 1);
         }
@@ -200,7 +211,7 @@ export default function App() {
   const generateReport = async () => {
     if (!rawData.trim() && !treatmentsData.trim()) return;
     setIsLoading(true);
-    setError(null); // On efface les erreurs précédentes
+    setError(null);
     try {
       const combinedPrompt = `
       Voici les données pour le compte rendu :
@@ -213,7 +224,7 @@ export default function App() {
       setGeneratedReport(data.candidates[0].content.parts[0].text);
     } catch (err) {
       console.error(err);
-      setError(err.message); // Affichage de l'erreur
+      setError(err.message);
     } finally {
       setIsLoading(false);
     }
@@ -255,34 +266,25 @@ export default function App() {
     }
   };
 
-  // Convertisseur Texte vers HTML pour l'affichage Web et Word
   const processTextToHtml = (text) => {
     if (!text) return '';
     return text.split('\n').map((line, index) => {
-      // Titres H1
       if (line.startsWith('# ')) {
         return `<h1 style="font-size: 11pt; font-weight: bold; text-transform: uppercase; text-decoration: underline; margin-top: 24px; margin-bottom: 12px; color: #000000; text-align: left;">${line.replace('# ', '')}</h1>`;
       }
-      // Titres H2
       if (line.startsWith('## ')) {
         return `<h2 style="font-size: 11pt; font-weight: bold; margin-top: 18px; color: #000000; text-align: left;">${line.replace('## ', '')}</h2>`;
       }
-      // Lignes vides
       if (line.trim() === '') {
         return '<p style="margin: 0; height: 12pt;">&nbsp;</p>';
       }
       
       let content = line;
-      // Formatage Gras+Souligné (Voies d'administration)
       content = content.replace(/<u>\*\*(.*?)\*\*<\/u>/g, '<span style="text-decoration: underline; font-weight: bold;">$1</span>');
-      // Formatage Souligné simple (Titres évolution)
       content = content.replace(/<u>(.*?)<\/u>/g, '<span style="text-decoration: underline;">$1</span>');
-      // Formatage Gras
       content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      // Formatage Italique
       content = content.replace(/\*(.*?)\*/g, '<em>$1</em>');
       
-      // Paragraphes normaux (Justifiés)
       return `<p style="margin-bottom: 6pt; margin-top: 0; text-align: justify;">${content}</p>`;
     }).join('');
   };
@@ -320,7 +322,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto">
         <audio ref={audioRef} hidden />
-        <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <header className="mb-8 flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-emerald-800 flex items-center gap-2">
               <Activity className="w-8 h-8 text-emerald-600" />
@@ -328,12 +330,25 @@ export default function App() {
             </h1>
             <p className="text-slate-500 mt-1">Générateur de CRH : copier-coller les notes ICCA. Anonymisez les données.</p>
           </div>
-          <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-            {REPORT_TEMPLATES.map((tpl) => (
-              <button key={tpl.id} onClick={() => setReportType(tpl)} className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex items-center gap-2 ${reportType.id === tpl.id ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
-                {tpl.icon} {tpl.name}
-              </button>
-            ))}
+          <div className="flex flex-col gap-2 w-full md:w-auto">
+            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl shadow-sm border border-slate-200">
+              <Key className="w-4 h-4 text-slate-400 shrink-0" />
+              <input 
+                type="password" 
+                placeholder="Clé API Google (optionnel)" 
+                value={customApiKey}
+                onChange={(e) => setCustomApiKey(e.target.value)}
+                className="text-sm outline-none bg-transparent w-full md:w-48 placeholder:text-slate-300"
+                title="Si la clé Vercel ne fonctionne pas, collez votre clé ici pour tester."
+              />
+            </div>
+            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+              {REPORT_TEMPLATES.map((tpl) => (
+                <button key={tpl.id} onClick={() => setReportType(tpl)} className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex items-center gap-2 ${reportType.id === tpl.id ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
+                  {tpl.icon} {tpl.name}
+                </button>
+              ))}
+            </div>
           </div>
         </header>
 
