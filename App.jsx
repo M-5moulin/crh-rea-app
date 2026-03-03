@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 // Clé API vide par défaut (sera remplie par Vercel Environment Variables ou le champ manuel)
-const apiKey = ""; 
+const apiKey = "AIzaSyCLt10LXlH1wZYd9x3sO3kaS7BXTLIuaKM"; 
 
 const REANIMATION_PROMPT = `
 Tu es un médecin interne en réanimation. Ta tâche est de rédiger un Compte Rendu de Sortie d'Hospitalisation (CRH) formel.
