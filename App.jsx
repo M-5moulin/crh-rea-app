@@ -129,7 +129,7 @@ export default function App() {
   
   const audioRef = useRef(null);
 
-  const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-1.5-flash") => {
+  const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.5-flash-preview-09-2025") => {
     let keyToUse = apiKey;
     try {
         if (!keyToUse && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
@@ -139,12 +139,6 @@ export default function App() {
         // Mode local
     }
     
-    if (!keyToUse) {
-      const err = new Error("Clé API manquante. Ajoutez VITE_GEMINI_API_KEY dans Vercel.");
-      err.dontRetry = true;
-      throw err;
-    }
-
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
@@ -163,10 +157,14 @@ export default function App() {
           const errorData = await response.json().catch(() => ({}));
           const errorMessage = errorData.error?.message || `Erreur Serveur (${response.status})`;
           
-          const err = new Error(errorMessage);
-          // Si c'est une erreur 400 ou 403 (clé invalide), on ne réessaie pas pour rien
-          if (response.status >= 400 && response.status < 500 && response.status !== 429) {
-              err.dontRetry = true;
+          let err = new Error(errorMessage);
+          
+          // Traitement spécifique de l'erreur Quota Europe / Facturation
+          if (errorMessage.includes("limit: 0") || errorMessage.includes("Quota exceeded") || errorMessage.includes("not found")) {
+            err = new Error("Quota bloqué. En Europe, l'API Google nécessite d'activer la facturation (Pay-as-you-go) sur Google AI Studio, même pour l'utilisation basique.");
+            err.dontRetry = true;
+          } else if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+            err.dontRetry = true;
           }
           throw err;
         }
@@ -393,7 +391,7 @@ export default function App() {
             </div>
           </div>
         </div>
-        <footer className="mt-8 text-center text-slate-400 text-xs">CRHréa AI • Gemini 1.5 Flash</footer>
+        <footer className="mt-8 text-center text-slate-400 text-xs">CRHréa AI • API Google</footer>
       </div>
     </div>
   );
