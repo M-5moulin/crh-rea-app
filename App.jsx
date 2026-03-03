@@ -159,8 +159,11 @@ export default function App() {
           
           let err = new Error(errorMessage);
           
-          // Traitement spécifique de l'erreur Quota Europe / Facturation
-          if (errorMessage.includes("limit: 0") || errorMessage.includes("Quota exceeded") || errorMessage.includes("not found")) {
+          // Traitement spécifique des erreurs connues pour guider l'utilisateur
+          if (errorMessage.includes("API key expired") || errorMessage.includes("API key not valid")) {
+            err = new Error("La clé API est invalide ou expirée. Si vous l'avez mise à jour sur Vercel, vous DEVEZ redéployer le site en DÉCOCHANT l'option 'Use existing build cache'.");
+            err.dontRetry = true;
+          } else if (errorMessage.includes("limit: 0") || errorMessage.includes("Quota exceeded") || errorMessage.includes("not found")) {
             err = new Error("Quota bloqué. En Europe, l'API Google nécessite d'activer la facturation (Pay-as-you-go) sur Google AI Studio, même pour l'utilisation basique.");
             err.dontRetry = true;
           } else if (response.status >= 400 && response.status < 500 && response.status !== 429) {
