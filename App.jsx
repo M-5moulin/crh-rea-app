@@ -15,7 +15,7 @@ import {
   Key
 } from 'lucide-react';
 
-// Clé API vide par défaut (sera remplie par Vercel Environment Variables ou le champ manuel)
+// Clé API vide par défaut
 const apiKey = ""; 
 
 const REANIMATION_PROMPT = `
@@ -128,15 +128,11 @@ export default function App() {
   const [error, setError] = useState(null);
   const [copySuccess, setCopySuccess] = useState(false);
   
-  // Nouveau state pour forcer la clé API manuellement si Vercel échoue
   const [customApiKey, setCustomApiKey] = useState('');
   
   const audioRef = useRef(null);
 
-  const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.0-flash") => {
-    // 1. Priorité à la clé saisie manuellement par l'utilisateur
-    // 2. Ensuite la clé codée en dur (apiKey)
-    // 3. Enfin la variable d'environnement Vercel
+  const fetchGemini = async (prompt, systemInstruction = "", model = "gemini-2.5-flash-preview-09-2025") => {
     let keyToUse = customApiKey.trim() || apiKey;
     
     try {
@@ -145,12 +141,6 @@ export default function App() {
         }
     } catch (e) { 
         // Mode local
-    }
-    
-    if (!keyToUse) {
-      const err = new Error("Clé API introuvable. Vercel ne trouve pas votre variable d'environnement. Veuillez coller votre clé dans le champ prévu à cet effet en haut de la page.");
-      err.dontRetry = true;
-      throw err;
     }
     
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
@@ -173,8 +163,8 @@ export default function App() {
           
           let err = new Error(errorMessage);
           
-          if (errorMessage.includes("API key not valid") || errorMessage.includes("API key expired")) {
-             err = new Error("La clé API utilisée est invalide. Vérifiez que vous avez bien copié la clé entière depuis Google AI Studio.");
+          if (errorMessage.includes("API key not valid") || errorMessage.includes("API key expired") || errorMessage.includes("API key not found")) {
+             err = new Error("La clé API utilisée est invalide. Vérifiez que vous avez bien copié la clé entière depuis Google AI Studio sans espaces avant ou après.");
              err.dontRetry = true;
           } else if (errorMessage.includes("limit: 0") || errorMessage.includes("Quota exceeded")) {
              err = new Error("Quota épuisé ou bloqué. Avez-vous bien activé la facturation (Pay-as-you-go) sur Google AI Studio comme expliqué précédemment ?");
@@ -198,7 +188,7 @@ export default function App() {
       } catch (err) {
         if (err.dontRetry) throw err;
         
-        if (retries < 2) { // 2 essais max pour éviter les chargements infinis
+        if (retries < 2) { 
           await new Promise(r => setTimeout(r, Math.pow(2, retries) * 1000));
           return execute(retries + 1);
         }
@@ -334,12 +324,12 @@ export default function App() {
             <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl shadow-sm border border-slate-200">
               <Key className="w-4 h-4 text-slate-400 shrink-0" />
               <input 
-                type="password" 
-                placeholder="Clé API Google (optionnel)" 
+                type="text" 
+                placeholder="Collez la clé API Google ici" 
                 value={customApiKey}
                 onChange={(e) => setCustomApiKey(e.target.value)}
-                className="text-sm outline-none bg-transparent w-full md:w-48 placeholder:text-slate-300"
-                title="Si la clé Vercel ne fonctionne pas, collez votre clé ici pour tester."
+                className="text-sm outline-none bg-transparent w-full md:w-64 placeholder:text-slate-300 font-mono"
+                title="Collez votre clé ici. Assurez-vous qu'il n'y a pas d'espace à la fin."
               />
             </div>
             <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
